@@ -1,0 +1,18 @@
+
+> interactivefencing@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://131.155.209.196:3000
+- Environments: .env
+✓ Ready in 469ms
+Creating turbopack project {
+  dir: 'C:\\Users\\20223697\\OneDrive - TU Eindhoven\\Desktop\\Interactive Fencing\\interactivefencing',
+  testMode: true
+}
+
+ GET / 200 in 377ms (next.js: 195ms, application-code: 182ms)
+ GET /api/optimize-drawing 405 in 78ms (next.js: 64ms, application-code: 14ms)
+ POST /api/optimize-drawing 400 in 17ms (next.js: 5ms, application-code: 13ms)
+ GET /api/optimize-drawing 405 in 41ms (next.js: 33ms, application-code: 7ms)

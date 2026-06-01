@@ -24,6 +24,16 @@ type OpenAIImageResponse = {
   };
 };
 
+export function GET() {
+  return Response.json(
+    {
+      error:
+        "This endpoint is available. Send a POST request with a canvas image data URL to optimize a drawing.",
+    },
+    { status: 405 },
+  );
+}
+
 function parseImageDataUrl(dataUrl: string) {
   const match = dataUrl.match(
     /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/u,
@@ -122,10 +132,12 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error:
-          responseJson?.error?.message ||
-          `OpenAI image request failed with status ${openAiResponse.status}.`,
+          responseJson?.error?.message
+            ? `OpenAI image request failed with upstream status ${openAiResponse.status}: ${responseJson.error.message}`
+            : `OpenAI image request failed with upstream status ${openAiResponse.status}.`,
+        upstreamStatus: openAiResponse.status,
       },
-      { status: openAiResponse.status },
+      { status: 502 },
     );
   }
 
