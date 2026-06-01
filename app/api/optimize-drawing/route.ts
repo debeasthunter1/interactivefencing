@@ -1,5 +1,5 @@
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 121;
 
 const OPENAI_IMAGE_ENDPOINT = "https://api.openai.com/v1/images/edits";
 
