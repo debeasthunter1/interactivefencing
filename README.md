@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Imagination Board
+
+This Next.js App Router project contains a creative drawing playground. Users can sketch with expressive tools, place editable shapes on a paper board, export the board, and generate an enhanced AI version through a secure server-side route.
 
 ## Getting Started
 
-First, run the development server:
+Create `.env.local` in the project root:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+OPENAI_API_KEY=your_key_here
+```
+
+Then run the development server:
+
+```bash
+npm.cmd run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Feature Map
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `app/page.tsx` renders the whiteboard.
+- `app/components/WhiteboardLayout.tsx` owns tool state, editable elements, undo/redo history, keyboard shortcuts, and AI generation state.
+- `app/components/WhiteboardCanvas.tsx` implements the large creativity canvas, calibrated pointer mapping, pan/zoom, grid modes, textured drawing tools, editable shapes, fill hit testing, export, and board replacement.
+- `app/components/CreativeToolbar.tsx` provides the lightweight primary creative toolbar.
+- `app/components/ShapeDropdown.tsx` groups all shape tools into one visual dropdown.
+- `app/components/BottomCreativeControls.tsx` provides the bottom dock for brush, color, opacity, texture, paper guide, and shape styling.
+- `app/components/FloatingActionButtons.tsx` provides compact generate/export/clear/zoom actions.
+- `app/components/CreativeShape.tsx` renders movable, resizable, rotatable vector shapes.
+- `app/components/AIResultModal.tsx` shows the original and AI result only after generation succeeds.
+- `app/api/optimize-drawing/route.ts` keeps the OpenAI API key server-side and calls the image edit endpoint.
 
-## Learn More
+## OpenAI Customization
 
-To learn more about Next.js, take a look at the following resources:
+Edit these constants in `app/api/optimize-drawing/route.ts`:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```ts
+const OPENAI_IMAGE_MODEL = "gpt-image-1.5";
+const IMAGE_OPTIMIZATION_PROMPT =
+  "Transform this creative drawing into a polished, imaginative, high-quality visual while preserving the original idea, playful composition, and expressive hand-drawn character.";
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The canvas exports a PNG data URL in the browser by compositing the drawing layer, editable shapes, and paper background into an offscreen canvas. The API route validates that data URL, converts it to a binary Blob, sends it to OpenAI as multipart form data, and returns the generated image as a displayable data URL.
 
-## Deploy on Vercel
+## Useful Commands
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm.cmd run dev
+npm.cmd run build
+npm.cmd run lint
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This project intentionally uses `npm.cmd` for Windows shell compatibility.
