@@ -23,6 +23,9 @@ import type {
 } from "@/app/types/whiteboard";
 
 const HISTORY_LIMIT = 50;
+const DEFAULT_SHAPE_BORDER_COLOR = "#0f172a";
+const DEFAULT_SHAPE_BORDER_WIDTH = 5;
+const DEFAULT_TEXTURE_INTENSITY = 0.58;
 
 type OptimizeDrawingResponse = {
   error?: string;
@@ -42,10 +45,7 @@ export function WhiteboardLayout() {
   const [strokeColor, setStrokeColor] = useState("#0f172a");
   const [strokeWidth, setStrokeWidth] = useState(6);
   const [strokeOpacity, setStrokeOpacity] = useState(0.86);
-  const [textureIntensity, setTextureIntensity] = useState(0.58);
   const [fillColor, setFillColor] = useState("#fef3c7");
-  const [borderColor, setBorderColor] = useState("#0f172a");
-  const [borderWidth, setBorderWidth] = useState(5);
   const [gridMode, setGridMode] = useState<GridMode>("dots");
   const [viewport, setViewport] = useState<ViewportState>({
     x: 88,
@@ -319,8 +319,8 @@ export function WhiteboardLayout() {
       <section aria-label="Infinite canvas world" className="absolute inset-0 z-0">
         <WhiteboardCanvas
           ref={canvasRef}
-          borderColor={borderColor}
-          borderWidth={borderWidth}
+          borderColor={DEFAULT_SHAPE_BORDER_COLOR}
+          borderWidth={DEFAULT_SHAPE_BORDER_WIDTH}
           elements={elements}
           fillColor={fillColor}
           gridMode={gridMode}
@@ -328,7 +328,7 @@ export function WhiteboardLayout() {
           strokeColor={strokeColor}
           strokeOpacity={strokeOpacity}
           strokeWidth={strokeWidth}
-          textureIntensity={textureIntensity}
+          textureIntensity={DEFAULT_TEXTURE_INTENSITY}
           tool={tool}
           viewport={viewport}
           onCanvasCommit={(snapshot) => commitSnapshot(snapshot, elements)}
@@ -369,8 +369,6 @@ export function WhiteboardLayout() {
         />
 
         <BottomCreativeControls
-          borderColor={borderColor}
-          borderWidth={borderWidth}
           fillColor={fillColor}
           onGridModeChange={setGridMode}
           gridMode={gridMode}
@@ -378,15 +376,11 @@ export function WhiteboardLayout() {
           strokeColor={strokeColor}
           strokeOpacity={strokeOpacity}
           strokeWidth={strokeWidth}
-          textureIntensity={textureIntensity}
-          onBorderColorChange={setBorderColor}
-          onBorderWidthChange={setBorderWidth}
           onFillColorChange={setFillColor}
           onShapeStyleChange={updateSelectedShape}
           onStrokeColorChange={setStrokeColor}
           onStrokeOpacityChange={setStrokeOpacity}
           onStrokeWidthChange={setStrokeWidth}
-          onTextureIntensityChange={setTextureIntensity}
         />
       </section>
 

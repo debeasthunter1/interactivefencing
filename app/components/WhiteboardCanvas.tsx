@@ -55,12 +55,21 @@ const SHAPE_TOOLS = new Set<WhiteboardTool>([
   "speech-bubble",
 ]);
 
-type DrawingMode = "draw" | "shape" | "pan" | "idle";
+type DrawingMode = "draw" | "move-shape" | "shape" | "pan" | "idle";
 
 type ShapeDraft = {
   baseElements: WhiteboardElement[];
   id: string;
   next: ShapeElementData;
+};
+
+type ShapeMoveDraft = {
+  baseElements: WhiteboardElement[];
+  hasMoved: boolean;
+  id: string;
+  next: ShapeElementData;
+  original: ShapeElementData;
+  start: Point;
 };
 
 type PanStart = {
@@ -168,6 +177,7 @@ export const WhiteboardCanvas = forwardRef<
   const pendingStrokeRef = useRef<StrokeSegment[]>([]);
   const rafRef = useRef<number | null>(null);
   const shapeDraftRef = useRef<ShapeDraft | null>(null);
+  const shapeMoveRef = useRef<ShapeMoveDraft | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const startPointRef = useRef<Point | null>(null);
   const toolRef = useRef(tool);
@@ -226,6 +236,7 @@ export const WhiteboardCanvas = forwardRef<
     context.clearRect(0, 0, width, height);
     context.translate(currentViewport.x, currentViewport.y);
     context.scale(currentViewport.zoom, currentViewport.zoom);
+    renderElementsToCanvas(context, elementsRef.current);
     for (const chunk of drawingChunksRef.current.values()) {
       if (boundsIntersect(chunkToBounds(chunk), visibleBounds)) {
         context.drawImage(chunk.canvas, chunk.x, chunk.y);
@@ -281,6 +292,10 @@ export const WhiteboardCanvas = forwardRef<
   useEffect(() => {
     renderViewport();
   }, [renderViewport, viewport]);
+
+  useEffect(() => {
+    renderViewport();
+  }, [elements, renderViewport]);
 
   useEffect(
     () => () => {
@@ -399,6 +414,22 @@ export const WhiteboardCanvas = forwardRef<
     const point = getCanvasPoint(event.clientX, event.clientY);
 
     if (tool === "select") {
+      const shape = findTopmostShapeAtPoint(point, elementsRef.current);
+      if (shape) {
+        canvas.setPointerCapture(event.pointerId);
+        shapeMoveRef.current = {
+          baseElements: elementsRef.current,
+          hasMoved: false,
+          id: shape.id,
+          next: shape,
+          original: shape,
+          start: point,
+        };
+        drawingModeRef.current = "move-shape";
+        onSelectElement(shape.id);
+        return;
+      }
+
       drawingModeRef.current = "idle";
       return;
     }
@@ -498,6 +529,34 @@ export const WhiteboardCanvas = forwardRef<
       return;
     }
 
+    if (drawingModeRef.current === "move-shape" && shapeMoveRef.current) {
+      event.preventDefault();
+      const coalescedEvents = event.nativeEvent.getCoalescedEvents?.() ?? [
+        event.nativeEvent,
+      ];
+      const lastEvent = coalescedEvents.at(-1) ?? event.nativeEvent;
+      const point = getCanvasPoint(lastEvent.clientX, lastEvent.clientY);
+      const draft = shapeMoveRef.current;
+      const dx = point.x - draft.start.x;
+      const dy = point.y - draft.start.y;
+      const next = {
+        ...draft.original,
+        x: draft.original.x + dx,
+        y: draft.original.y + dy,
+      };
+
+      draft.hasMoved = draft.hasMoved || Math.hypot(dx, dy) > 0.5;
+      draft.next = next;
+      if (draft.hasMoved) {
+        onElementsChange(
+          draft.baseElements.map((element) =>
+            element.id === draft.id ? next : element,
+          ),
+        );
+      }
+      return;
+    }
+
     if (drawingModeRef.current === "idle") {
       return;
     }
@@ -575,6 +634,22 @@ export const WhiteboardCanvas = forwardRef<
       return;
     }
 
+    if (mode === "move-shape" && shapeMoveRef.current) {
+      const draft = shapeMoveRef.current;
+      if (draft.hasMoved) {
+        const nextElements = draft.baseElements.map((element) =>
+          element.id === draft.id ? draft.next : element,
+        );
+        onElementsChange(nextElements);
+        onElementCommit(nextElements);
+      }
+      shapeMoveRef.current = null;
+      drawingModeRef.current = "idle";
+      startPointRef.current = null;
+      lastPointRef.current = null;
+      return;
+    }
+
     if (mode === "shape" && shapeDraftRef.current) {
       const draft = shapeDraftRef.current;
       const nextElements = [...draft.baseElements, draft.next];
@@ -630,8 +705,8 @@ export const WhiteboardCanvas = forwardRef<
       renderBoardBackground(context, gridMode, exportBounds);
       context.save();
       context.translate(-exportBounds.x, -exportBounds.y);
-      renderChunksToCanvas(context, drawingChunksRef.current, exportBounds);
       renderElementsToCanvas(context, elements);
+      renderChunksToCanvas(context, drawingChunksRef.current, exportBounds);
       context.restore();
 
       return exportCanvas.toDataURL(
@@ -1653,40 +1728,43 @@ function addShapePath(
   width: number,
   height: number,
 ) {
+  const x = (value: number) => (value / 100) * width;
+  const y = (value: number) => (value / 100) * height;
+
   if (kind === "rectangle") {
-    context.rect(0, 0, width, height);
+    roundedRect(context, x(8), y(10), x(84), y(80), Math.min(x(2), y(2)));
   } else if (kind === "rounded-rectangle") {
     roundedRect(
       context,
-      0,
-      0,
-      width,
-      height,
-      Math.min(32, width * 0.18, height * 0.18),
+      x(8),
+      y(10),
+      x(84),
+      y(80),
+      Math.min(x(16), y(16)),
     );
   } else if (kind === "circle") {
-    context.ellipse(width / 2, height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
+    context.ellipse(x(50), y(50), x(42), y(40), 0, 0, Math.PI * 2);
   } else if (kind === "triangle") {
-    context.moveTo(width / 2, 0);
-    context.lineTo(width, height);
-    context.lineTo(0, height);
+    context.moveTo(x(50), y(8));
+    context.lineTo(x(94), y(90));
+    context.lineTo(x(6), y(90));
     context.closePath();
   } else if (kind === "star") {
-    starPath(context, width, height);
+    starPath(context, x, y);
   } else if (kind === "heart") {
-    heartPath(context, width, height);
+    heartPath(context, x, y);
   } else if (kind === "cloud") {
-    cloudPath(context, width, height);
+    cloudPath(context, x, y);
   } else if (kind === "speech-bubble") {
-    speechBubblePath(context, width, height);
+    speechBubblePath(context, x, y);
   } else {
-    context.moveTo(0, height * 0.38);
-    context.lineTo(width * 0.58, height * 0.38);
-    context.lineTo(width * 0.58, height * 0.12);
-    context.lineTo(width, height / 2);
-    context.lineTo(width * 0.58, height * 0.88);
-    context.lineTo(width * 0.58, height * 0.62);
-    context.lineTo(0, height * 0.62);
+    context.moveTo(x(8), y(38));
+    context.lineTo(x(58), y(38));
+    context.lineTo(x(58), y(12));
+    context.lineTo(x(92), y(52));
+    context.lineTo(x(58), y(88));
+    context.lineTo(x(58), y(62));
+    context.lineTo(x(8), y(62));
     context.closePath();
   }
 }
@@ -1710,46 +1788,65 @@ function roundedRect(
   context.quadraticCurveTo(x, y, x + radius, y);
 }
 
-function starPath(context: CanvasRenderingContext2D, width: number, height: number) {
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const outer = Math.min(width, height) / 2;
-  const inner = outer * 0.45;
-  for (let index = 0; index < 10; index += 1) {
-    const angle = -Math.PI / 2 + (index * Math.PI) / 5;
-    const radius = index % 2 === 0 ? outer : inner;
-    const x = centerX + Math.cos(angle) * radius;
-    const y = centerY + Math.sin(angle) * radius;
-    if (index === 0) {
-      context.moveTo(x, y);
-    } else {
-      context.lineTo(x, y);
-    }
-  }
+function starPath(
+  context: CanvasRenderingContext2D,
+  x: (value: number) => number,
+  y: (value: number) => number,
+) {
+  context.moveTo(x(50), y(6));
+  context.lineTo(x(62), y(36));
+  context.lineTo(x(94), y(38));
+  context.lineTo(x(69), y(58));
+  context.lineTo(x(77), y(90));
+  context.lineTo(x(50), y(72));
+  context.lineTo(x(23), y(90));
+  context.lineTo(x(31), y(58));
+  context.lineTo(x(6), y(38));
+  context.lineTo(x(38), y(36));
   context.closePath();
 }
 
-function heartPath(context: CanvasRenderingContext2D, width: number, height: number) {
-  context.moveTo(width / 2, height * 0.9);
-  context.bezierCurveTo(width * 0.08, height * 0.62, 0, height * 0.28, width * 0.24, height * 0.12);
-  context.bezierCurveTo(width * 0.38, height * 0.02, width * 0.49, height * 0.12, width / 2, height * 0.24);
-  context.bezierCurveTo(width * 0.51, height * 0.12, width * 0.62, height * 0.02, width * 0.76, height * 0.12);
-  context.bezierCurveTo(width, height * 0.28, width * 0.92, height * 0.62, width / 2, height * 0.9);
+function heartPath(
+  context: CanvasRenderingContext2D,
+  x: (value: number) => number,
+  y: (value: number) => number,
+) {
+  context.moveTo(x(50), y(88));
+  context.bezierCurveTo(x(26), y(66), x(12), y(52), x(12), y(33));
+  context.bezierCurveTo(x(12), y(20), x(22), y(10), x(35), y(10));
+  context.bezierCurveTo(x(42), y(10), x(48), y(13), x(50), y(19));
+  context.bezierCurveTo(x(52), y(13), x(58), y(10), x(65), y(10));
+  context.bezierCurveTo(x(78), y(10), x(88), y(20), x(88), y(33));
+  context.bezierCurveTo(x(88), y(52), x(74), y(66), x(50), y(88));
   context.closePath();
 }
 
-function cloudPath(context: CanvasRenderingContext2D, width: number, height: number) {
-  context.moveTo(width * 0.25, height * 0.76);
-  context.bezierCurveTo(width * 0.04, height * 0.76, 0, height * 0.54, width * 0.18, height * 0.44);
-  context.bezierCurveTo(width * 0.2, height * 0.2, width * 0.42, height * 0.1, width * 0.58, height * 0.22);
-  context.bezierCurveTo(width * 0.78, height * 0.14, width * 0.92, height * 0.32, width * 0.84, height * 0.5);
-  context.bezierCurveTo(width, height * 0.54, width * 0.96, height * 0.76, width * 0.76, height * 0.76);
+function cloudPath(
+  context: CanvasRenderingContext2D,
+  x: (value: number) => number,
+  y: (value: number) => number,
+) {
+  context.moveTo(x(28), y(76));
+  context.bezierCurveTo(x(15), y(76), x(5), y(67), x(5), y(55));
+  context.bezierCurveTo(x(5), y(44), x(13), y(35), x(24), y(34));
+  context.bezierCurveTo(x(29), y(20), x(42), y(11), x(57), y(15));
+  context.bezierCurveTo(x(70), y(18), x(80), y(29), x(82), y(42));
+  context.bezierCurveTo(x(90), y(45), x(95), y(52), x(95), y(60));
+  context.bezierCurveTo(x(95), y(70), x(87), y(76), x(76), y(76));
   context.closePath();
 }
 
-function speechBubblePath(context: CanvasRenderingContext2D, width: number, height: number) {
-  roundedRect(context, 0, 0, width, height * 0.78, Math.min(28, width * 0.12));
-  context.moveTo(width * 0.44, height * 0.78);
-  context.lineTo(width * 0.32, height);
-  context.lineTo(width * 0.62, height * 0.78);
+function speechBubblePath(
+  context: CanvasRenderingContext2D,
+  x: (value: number) => number,
+  y: (value: number) => number,
+) {
+  context.moveTo(x(10), y(17));
+  context.lineTo(x(90), y(17));
+  context.lineTo(x(90), y(69));
+  context.lineTo(x(58), y(69));
+  context.lineTo(x(43), y(88));
+  context.lineTo(x(43), y(69));
+  context.lineTo(x(10), y(69));
+  context.closePath();
 }

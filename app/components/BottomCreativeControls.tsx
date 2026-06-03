@@ -4,24 +4,18 @@ import { Frame, Palette, SlidersHorizontal } from "lucide-react";
 import type { GridMode, ShapeElementData } from "@/app/types/whiteboard";
 
 type BottomCreativeControlsProps = {
-  borderColor: string;
-  borderWidth: number;
   fillColor: string;
   gridMode: GridMode;
   selectedShapeElement: ShapeElementData | null;
   strokeColor: string;
   strokeOpacity: number;
   strokeWidth: number;
-  textureIntensity: number;
-  onBorderColorChange: (color: string) => void;
-  onBorderWidthChange: (width: number) => void;
   onFillColorChange: (color: string) => void;
   onGridModeChange: (mode: GridMode) => void;
   onShapeStyleChange: (updates: Partial<ShapeElementData>) => void;
   onStrokeColorChange: (color: string) => void;
   onStrokeOpacityChange: (opacity: number) => void;
   onStrokeWidthChange: (width: number) => void;
-  onTextureIntensityChange: (intensity: number) => void;
 };
 
 const gridModes: Array<{ label: string; mode: GridMode }> = [
@@ -36,18 +30,18 @@ export function BottomCreativeControls({
   return (
     <section
       aria-label="Creative controls"
-      className="pointer-events-auto fixed right-3 top-[4.75rem] z-30 md:right-4 md:top-1/2 md:w-[248px] md:-translate-y-1/2"
+      className="pointer-events-auto fixed right-2 top-[4.5rem] z-30 sm:right-3 md:right-3 md:top-1/2 md:w-[198px] md:-translate-y-1/2 lg:w-[212px]"
     >
       <details className="group relative md:hidden">
-        <summary className="ml-auto flex h-12 w-12 cursor-pointer list-none items-center justify-center rounded-[18px] border border-white/70 bg-white/82 text-slate-700 shadow-[0_18px_54px_rgba(124,58,237,0.18)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-white focus:outline-none focus:ring-2 focus:ring-fuchsia-300 [&::-webkit-details-marker]:hidden">
+        <summary className="ml-auto flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-[16px] border border-white/70 bg-white/82 text-slate-700 shadow-[0_16px_44px_rgba(124,58,237,0.16)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-white focus:outline-none focus:ring-2 focus:ring-fuchsia-300 [&::-webkit-details-marker]:hidden">
           <SlidersHorizontal className="h-5 w-5 text-sky-500" />
         </summary>
-        <div className="absolute right-0 top-14 w-[min(260px,calc(100vw-5.5rem))] rounded-[26px] border border-white/70 bg-white/86 p-2 shadow-[0_22px_70px_rgba(124,58,237,0.2)] backdrop-blur-xl">
+        <div className="absolute right-0 top-[3.25rem] w-[min(232px,calc(100vw-5rem))] rounded-[22px] border border-white/70 bg-white/86 p-1.5 shadow-[0_18px_56px_rgba(124,58,237,0.18)] backdrop-blur-xl">
           <ControlStack {...props} />
         </div>
       </details>
 
-      <div className="hidden flex-col rounded-[28px] border border-white/70 bg-white/82 p-2 shadow-[0_20px_70px_rgba(124,58,237,0.18)] backdrop-blur-xl transition duration-200 hover:bg-white/88 md:flex">
+      <div className="hidden flex-col rounded-[22px] border border-white/70 bg-white/82 p-1.5 shadow-[0_18px_56px_rgba(124,58,237,0.16)] backdrop-blur-xl transition duration-200 hover:bg-white/88 md:flex">
         <ControlStack {...props} />
       </div>
     </section>
@@ -55,33 +49,27 @@ export function BottomCreativeControls({
 }
 
 function ControlStack({
-  borderColor,
-  borderWidth,
   fillColor,
   gridMode,
   selectedShapeElement,
   strokeColor,
   strokeOpacity,
   strokeWidth,
-  textureIntensity,
-  onBorderColorChange,
-  onBorderWidthChange,
   onFillColorChange,
   onGridModeChange,
   onShapeStyleChange,
   onStrokeColorChange,
   onStrokeOpacityChange,
   onStrokeWidthChange,
-  onTextureIntensityChange,
 }: BottomCreativeControlsProps) {
   return (
-    <div className="grid gap-2">
-      <div className="rounded-[22px] bg-white/58 p-1.5">
-        <div className="mb-1.5 flex items-center gap-2 px-1 text-xs font-black text-slate-600">
-          <Palette className="h-4 w-4 text-fuchsia-500" />
+    <div className="grid gap-1.5">
+      <div className="rounded-[18px] bg-white/58 p-1">
+        <div className="mb-1 flex items-center gap-1.5 px-1 text-[11px] font-black leading-none text-slate-600">
+          <Palette className="h-3.5 w-3.5 text-fuchsia-500" />
           Stroke
         </div>
-        <div className="grid gap-2">
+        <div className="grid gap-1.5">
           <ColorControl
             label="Color"
             value={strokeColor}
@@ -107,12 +95,12 @@ function ControlStack({
         </div>
       </div>
 
-      <div className="rounded-[22px] bg-white/58 p-1.5">
-        <div className="mb-1.5 flex items-center gap-2 px-1 text-xs font-black text-slate-600">
-          <Frame className="h-4 w-4 text-violet-500" />
+      <div className="rounded-[18px] bg-white/58 p-1">
+        <div className="mb-1 flex items-center gap-1.5 px-1 text-[11px] font-black leading-none text-slate-600">
+          <Frame className="h-3.5 w-3.5 text-violet-500" />
           Shape
         </div>
-        <div className="grid gap-2">
+        <div className="grid gap-1.5">
           <ColorControl
             label="Fill"
             value={selectedShapeElement?.fillColor ?? fillColor}
@@ -124,47 +112,15 @@ function ControlStack({
               }
             }}
           />
-          <ColorControl
-            label="Border"
-            value={selectedShapeElement?.borderColor ?? borderColor}
-            ariaLabel="Shape border color"
-            onChange={(color) => {
-              onBorderColorChange(color);
-              if (selectedShapeElement) {
-                onShapeStyleChange({ borderColor: color });
-              }
-            }}
-          />
-          <RangeControl
-            label="Border width"
-            valueLabel={`${selectedShapeElement?.borderWidth ?? borderWidth}px`}
-            min={1}
-            max={24}
-            value={selectedShapeElement?.borderWidth ?? borderWidth}
-            onChange={(value) => {
-              onBorderWidthChange(value);
-              if (selectedShapeElement) {
-                onShapeStyleChange({ borderWidth: value });
-              }
-            }}
-          />
         </div>
       </div>
 
-      <div className="rounded-[22px] bg-white/58 p-1.5">
-        <div className="mb-1.5 flex items-center gap-2 px-1 text-xs font-black text-slate-600">
-          <SlidersHorizontal className="h-4 w-4 text-sky-500" />
+      <div className="rounded-[18px] bg-white/58 p-1">
+        <div className="mb-1 flex items-center gap-1.5 px-1 text-[11px] font-black leading-none text-slate-600">
+          <SlidersHorizontal className="h-3.5 w-3.5 text-sky-500" />
           Board
         </div>
-        <div className="grid gap-2">
-          <RangeControl
-            label="Texture"
-            valueLabel={`${Math.round(textureIntensity * 100)}%`}
-            min={0}
-            max={100}
-            value={Math.round(textureIntensity * 100)}
-            onChange={(value) => onTextureIntensityChange(value / 100)}
-          />
+        <div className="grid gap-1.5">
           <SegmentedButtons
             label="Canvas guide"
             value={gridMode}
@@ -193,8 +149,8 @@ function RangeControl({
   valueLabel: string;
 }) {
   return (
-    <label className="grid gap-1 rounded-[18px] bg-white/60 px-2.5 py-1.5 text-xs font-bold text-slate-500">
-      <span className="flex items-center justify-between gap-3">
+    <label className="grid gap-1 rounded-[14px] bg-white/60 px-2 py-1.5 text-[11px] font-bold text-slate-500">
+      <span className="flex items-center justify-between gap-2">
         <span>{label}</span>
         <span className="text-slate-900">{valueLabel}</span>
       </span>
@@ -223,14 +179,14 @@ function ColorControl({
   value: string;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 rounded-[18px] bg-white/60 px-2.5 py-1.5 text-xs font-bold text-slate-500">
+    <label className="flex min-h-9 items-center justify-between gap-2 rounded-[14px] bg-white/60 px-2 py-1.5 text-[11px] font-bold text-slate-500">
       <span>{label}</span>
       <input
         aria-label={ariaLabel}
         type="color"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-7 w-9 cursor-pointer rounded-xl border border-white bg-transparent shadow-inner"
+        className="h-8 w-9 cursor-pointer rounded-xl border border-white bg-transparent shadow-inner"
       />
     </label>
   );
@@ -250,7 +206,7 @@ function SegmentedButtons<T extends string>({
   return (
     <div
       aria-label={label}
-      className="grid grid-cols-3 gap-1 rounded-[18px] bg-white/60 p-1"
+      className="grid grid-cols-3 gap-1 rounded-[14px] bg-white/60 p-1"
     >
       {options.map((option) => (
         <button
@@ -259,7 +215,7 @@ function SegmentedButtons<T extends string>({
           aria-pressed={value === option.mode}
           onClick={() => onChange(option.mode)}
           className={[
-            "h-7 rounded-xl px-2 text-xs font-bold transition focus:outline-none focus:ring-2 focus:ring-fuchsia-300",
+            "h-8 rounded-[10px] px-1.5 text-[11px] font-bold transition focus:outline-none focus:ring-2 focus:ring-fuchsia-300",
             value === option.mode
               ? "bg-slate-950 text-white shadow-md"
               : "text-slate-500 hover:bg-white hover:text-slate-950",
