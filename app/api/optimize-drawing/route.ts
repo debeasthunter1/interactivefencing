@@ -6,9 +6,9 @@ const OPENAI_IMAGE_ENDPOINT = "https://api.openai.com/v1/images/edits";
 // Customize the model here. GPT Image models return base64 image data by default.
 const OPENAI_IMAGE_MODEL = "gpt-image-1.5";
 
-// Customize the image optimization instruction here.
+// Edit this prompt to change how drawings are transformed by AI.
 const IMAGE_OPTIMIZATION_PROMPT =
-  "Transform this creative drawing into a polished, imaginative, high-quality visual while preserving the original idea, playful composition, and expressive hand-drawn character.";
+  "Transform the user's drawing into a realistic real-life image of the represented element. Preserve the original element, composition, orientation, and perspective from the drawing. Make it look as realistic as possible, like a high-quality photograph or lifelike object captured in the real world. Do not change the core idea of the drawing. Do not turn it into a cartoon or illustration. Keep the same point of view and recognizable shape while adding realistic materials, lighting, depth, texture, and detail.";
 
 type OptimizeDrawingRequest = {
   image?: string;

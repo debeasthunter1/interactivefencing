@@ -10,10 +10,9 @@ import {
   PaintBucket,
   Pencil,
   Redo2,
-  Sparkles,
   Undo2,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import type { ComponentType, SVGProps } from "react";
 import type { ShapeKind, WhiteboardTool } from "@/app/types/whiteboard";
 import { ShapeDropdown } from "./ShapeDropdown";
 import { ToolButton } from "./ToolButton";
@@ -27,8 +26,10 @@ type CreativeToolbarProps = {
   onUndo: () => void;
 };
 
+type ToolIcon = ComponentType<SVGProps<SVGSVGElement>>;
+
 const tools: Array<{
-  icon: LucideIcon;
+  icon: ToolIcon;
   label: string;
   shortcut?: string;
   tool: WhiteboardTool;
@@ -37,12 +38,12 @@ const tools: Array<{
   { icon: Hand, label: "Pan", tool: "pan" },
   { icon: Pencil, label: "Pencil", shortcut: "P", tool: "pencil" },
   { icon: Brush, label: "Marker", shortcut: "M", tool: "marker" },
-  { icon: Sparkles, label: "Crayon", tool: "crayon" },
+  { icon: CrayonIcon, label: "Crayon", tool: "crayon" },
   { icon: Paintbrush, label: "Paint brush", tool: "paint-brush" },
-  { icon: Sparkles, label: "Chalk", tool: "chalk" },
+  { icon: ChalkIcon, label: "Chalk", tool: "chalk" },
   { icon: Highlighter, label: "Highlighter", tool: "highlighter" },
-  { icon: Eraser, label: "Eraser", shortcut: "E", tool: "eraser" },
   { icon: PaintBucket, label: "Fill shape", shortcut: "F", tool: "fill" },
+  { icon: Eraser, label: "Eraser", shortcut: "E", tool: "eraser" },
 ];
 
 export function CreativeToolbar({
@@ -56,62 +57,118 @@ export function CreativeToolbar({
   return (
     <nav
       aria-label="Creative tools"
-      className="fixed bottom-[124px] left-3 right-3 z-30 flex items-center gap-1 overflow-x-auto rounded-[26px] border border-white/70 bg-white/82 p-2 shadow-[0_20px_70px_rgba(124,58,237,0.18)] backdrop-blur-xl sm:bottom-[112px] md:bottom-auto md:left-4 md:right-auto md:top-1/2 md:max-h-[calc(100vh-148px)] md:w-[88px] md:-translate-y-1/2 md:flex-col md:overflow-y-auto md:overflow-x-visible"
+      className="pointer-events-auto fixed left-3 top-1/2 z-30 flex -translate-y-1/2 flex-col gap-1 rounded-[24px] border border-white/70 bg-white/82 p-1.5 shadow-[0_20px_70px_rgba(124,58,237,0.18)] backdrop-blur-xl transition duration-200 hover:bg-white/88 sm:left-4"
     >
-      <div className="flex shrink-0 items-center gap-1 rounded-[20px] bg-white/58 p-1 md:flex-col">
+      <div className="grid shrink-0 gap-1 rounded-[18px] bg-white/58 p-1">
         {tools.slice(0, 2).map(({ icon: Icon, label, shortcut, tool }) => (
           <ToolButton
             key={tool}
             active={activeTool === tool}
             label={label}
             shortcut={shortcut}
+            size="compact"
             onClick={() => onToolChange(tool)}
           >
-            <Icon className="h-6 w-6" />
+            <Icon className="h-5 w-5" />
           </ToolButton>
         ))}
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1 rounded-[20px] bg-white/58 p-1 md:flex-col">
-        {tools.slice(2, 9).map(({ icon: Icon, label, shortcut, tool }) => (
-          <ToolButton
-            key={tool}
-            active={activeTool === tool}
-            label={label}
-            shortcut={shortcut}
-            onClick={() => onToolChange(tool)}
-          >
-            <Icon className="h-6 w-6" />
-          </ToolButton>
-        ))}
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1 rounded-[20px] bg-white/58 p-1 md:flex-col">
         <ShapeDropdown
           activeTool={activeTool}
+          buttonSize="compact"
           onShapeSelect={(shape: ShapeKind) => onToolChange(shape)}
         />
-        {tools.slice(9).map(({ icon: Icon, label, shortcut, tool }) => (
+      </div>
+
+      <div className="grid shrink-0 gap-1 rounded-[18px] bg-white/58 p-1">
+        {tools.slice(2, 8).map(({ icon: Icon, label, shortcut, tool }) => (
           <ToolButton
             key={tool}
             active={activeTool === tool}
             label={label}
             shortcut={shortcut}
+            size="compact"
             onClick={() => onToolChange(tool)}
           >
-            <Icon className="h-6 w-6" />
+            <Icon className="h-5 w-5" />
           </ToolButton>
         ))}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1 rounded-[20px] bg-white/58 p-1 md:flex-col">
-        <ToolButton label="Undo" disabled={!canUndo} onClick={onUndo}>
-          <Undo2 className="h-6 w-6" />
+      <div className="grid shrink-0 gap-1 rounded-[18px] bg-white/58 p-1">
+        {tools.slice(8).map(({ icon: Icon, label, shortcut, tool }) => (
+          <ToolButton
+            key={tool}
+            active={activeTool === tool}
+            label={label}
+            shortcut={shortcut}
+            size="compact"
+            onClick={() => onToolChange(tool)}
+          >
+            <Icon className="h-5 w-5" />
+          </ToolButton>
+        ))}
+      </div>
+
+      <div className="grid shrink-0 gap-1 rounded-[18px] bg-white/58 p-1">
+        <ToolButton
+          label="Undo"
+          disabled={!canUndo}
+          onClick={onUndo}
+          size="compact"
+        >
+          <Undo2 className="h-5 w-5" />
         </ToolButton>
-        <ToolButton label="Redo" disabled={!canRedo} onClick={onRedo}>
-          <Redo2 className="h-6 w-6" />
+        <ToolButton
+          label="Redo"
+          disabled={!canRedo}
+          onClick={onRedo}
+          size="compact"
+        >
+          <Redo2 className="h-5 w-5" />
         </ToolButton>
       </div>
     </nav>
+  );
+}
+
+function CrayonIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M7 19 19 7l-2-2L5 17l-.5 2.5Z" />
+      <path d="m14 8 2 2" />
+      <path d="m11 11 2 2" />
+      <path d="m5 17 2 2" />
+      <path d="M17 5 19.5 3.5 20.5 4.5 19 7" />
+    </svg>
+  );
+}
+
+function ChalkIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M5 15.5 14.5 6a2.1 2.1 0 0 1 3 0l.5.5a2.1 2.1 0 0 1 0 3L8.5 19a2.1 2.1 0 0 1-3 0l-.5-.5a2.1 2.1 0 0 1 0-3Z" />
+      <path d="m13.5 7 3.5 3.5" />
+      <path d="M16.5 15.5h.01" />
+      <path d="M19.5 13h.01" />
+      <path d="M14 18.5h.01" />
+    </svg>
   );
 }

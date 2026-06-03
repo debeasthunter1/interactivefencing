@@ -315,73 +315,80 @@ export function WhiteboardLayout() {
   }, [handleDeleteSelected, handleRedo, handleUndo]);
 
   return (
-    <main>
-      <WhiteboardCanvas
-        ref={canvasRef}
-        borderColor={borderColor}
-        borderWidth={borderWidth}
-        elements={elements}
-        fillColor={fillColor}
-        gridMode={gridMode}
-        selectedElementId={selectedElementId}
-        strokeColor={strokeColor}
-        strokeOpacity={strokeOpacity}
-        strokeWidth={strokeWidth}
-        textureIntensity={textureIntensity}
-        tool={tool}
-        viewport={viewport}
-        onCanvasCommit={(snapshot) => commitSnapshot(snapshot, elements)}
-        onCanvasReady={(snapshot) => {
-          if (!hasInitialHistoryRef.current) {
-            hasInitialHistoryRef.current = true;
-            commitSnapshot(snapshot, elements);
-          }
-        }}
-        onElementCommit={commitElements}
-        onElementsChange={updateElements}
-        onFillMiss={showFillHint}
-        onSelectElement={setSelectedElementId}
-        onViewportChange={setViewport}
-      />
+    <main className="relative h-screen w-screen overflow-hidden">
+      <section aria-label="Infinite canvas world" className="absolute inset-0 z-0">
+        <WhiteboardCanvas
+          ref={canvasRef}
+          borderColor={borderColor}
+          borderWidth={borderWidth}
+          elements={elements}
+          fillColor={fillColor}
+          gridMode={gridMode}
+          selectedElementId={selectedElementId}
+          strokeColor={strokeColor}
+          strokeOpacity={strokeOpacity}
+          strokeWidth={strokeWidth}
+          textureIntensity={textureIntensity}
+          tool={tool}
+          viewport={viewport}
+          onCanvasCommit={(snapshot) => commitSnapshot(snapshot, elements)}
+          onCanvasReady={(snapshot) => {
+            if (!hasInitialHistoryRef.current) {
+              hasInitialHistoryRef.current = true;
+              commitSnapshot(snapshot, elements);
+            }
+          }}
+          onElementCommit={commitElements}
+          onElementsChange={updateElements}
+          onFillMiss={showFillHint}
+          onSelectElement={setSelectedElementId}
+          onViewportChange={setViewport}
+        />
+      </section>
 
-      <CreativeToolbar
-        activeTool={tool}
-        canRedo={historyIndex < history.length - 1}
-        canUndo={historyIndex > 0}
-        onRedo={handleRedo}
-        onToolChange={setTool}
-        onUndo={handleUndo}
-      />
+      <section
+        aria-label="Fixed whiteboard controls"
+        className="pointer-events-none fixed inset-0 z-50"
+      >
+        <CreativeToolbar
+          activeTool={tool}
+          canRedo={historyIndex < history.length - 1}
+          canUndo={historyIndex > 0}
+          onRedo={handleRedo}
+          onToolChange={setTool}
+          onUndo={handleUndo}
+        />
 
-      <FloatingActionButtons
-        isGenerating={isGenerating}
-        viewport={viewport}
-        onClear={handleClear}
-        onExport={handleExport}
-        onGenerate={handleGenerate}
-        onViewportChange={setViewport}
-      />
+        <FloatingActionButtons
+          isGenerating={isGenerating}
+          viewport={viewport}
+          onClear={handleClear}
+          onExport={handleExport}
+          onGenerate={handleGenerate}
+          onViewportChange={setViewport}
+        />
 
-      <BottomCreativeControls
-        borderColor={borderColor}
-        borderWidth={borderWidth}
-        fillColor={fillColor}
-        onGridModeChange={setGridMode}
-        gridMode={gridMode}
-        selectedShapeElement={selectedShapeElement}
-        strokeColor={strokeColor}
-        strokeOpacity={strokeOpacity}
-        strokeWidth={strokeWidth}
-        textureIntensity={textureIntensity}
-        onBorderColorChange={setBorderColor}
-        onBorderWidthChange={setBorderWidth}
-        onFillColorChange={setFillColor}
-        onShapeStyleChange={updateSelectedShape}
-        onStrokeColorChange={setStrokeColor}
-        onStrokeOpacityChange={setStrokeOpacity}
-        onStrokeWidthChange={setStrokeWidth}
-        onTextureIntensityChange={setTextureIntensity}
-      />
+        <BottomCreativeControls
+          borderColor={borderColor}
+          borderWidth={borderWidth}
+          fillColor={fillColor}
+          onGridModeChange={setGridMode}
+          gridMode={gridMode}
+          selectedShapeElement={selectedShapeElement}
+          strokeColor={strokeColor}
+          strokeOpacity={strokeOpacity}
+          strokeWidth={strokeWidth}
+          textureIntensity={textureIntensity}
+          onBorderColorChange={setBorderColor}
+          onBorderWidthChange={setBorderWidth}
+          onFillColorChange={setFillColor}
+          onShapeStyleChange={updateSelectedShape}
+          onStrokeColorChange={setStrokeColor}
+          onStrokeOpacityChange={setStrokeOpacity}
+          onStrokeWidthChange={setStrokeWidth}
+          onTextureIntensityChange={setTextureIntensity}
+        />
+      </section>
 
       {errorMessage ? (
         <div

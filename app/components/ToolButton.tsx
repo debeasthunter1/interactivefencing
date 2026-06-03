@@ -10,6 +10,7 @@ type ToolButtonProps = Omit<
   children: ReactNode;
   label: string;
   onClick: () => void;
+  size?: "compact" | "regular";
   shortcut?: string;
 };
 
@@ -19,6 +20,7 @@ export function ToolButton({
   disabled = false,
   label,
   onClick,
+  size = "regular",
   shortcut,
   ...buttonProps
 }: ToolButtonProps) {
@@ -32,7 +34,10 @@ export function ToolButton({
       onClick={onClick}
       {...buttonProps}
       className={[
-        "group relative inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border transition duration-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-300",
+        "group relative inline-flex shrink-0 items-center justify-center border transition duration-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-300",
+        size === "compact"
+          ? "h-9 w-9 rounded-[15px] sm:h-10 sm:w-10 sm:rounded-[16px]"
+          : "h-12 w-12 rounded-2xl",
         active
           ? "border-fuchsia-300 bg-gradient-to-br from-fuchsia-50 to-sky-50 text-fuchsia-700 shadow-lg shadow-fuchsia-500/15"
           : "border-transparent text-slate-600 hover:-translate-y-0.5 hover:bg-white hover:text-slate-950 hover:shadow-md",

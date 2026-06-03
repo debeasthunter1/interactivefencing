@@ -30,7 +30,7 @@ export function FloatingActionButtons({
 }: FloatingActionButtonsProps) {
   return (
     <>
-      <div className="fixed left-4 top-4 z-30 hidden rounded-[22px] border border-white/70 bg-white/70 px-4 py-3 shadow-[0_18px_50px_rgba(124,58,237,0.12)] backdrop-blur-xl md:block">
+      <div className="pointer-events-auto fixed left-[5.25rem] top-4 z-30 hidden rounded-[22px] border border-white/70 bg-white/70 px-4 py-3 shadow-[0_18px_50px_rgba(124,58,237,0.12)] backdrop-blur-xl md:block">
         <div className="flex items-center gap-3">
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-400 via-amber-300 to-sky-400 text-white shadow-lg shadow-fuchsia-500/20">
             <WandSparkles className="h-5 w-5" />
@@ -42,7 +42,7 @@ export function FloatingActionButtons({
         </div>
       </div>
 
-      <div className="fixed right-4 top-4 z-30 flex max-w-[calc(100vw-2rem)] items-start gap-3">
+      <div className="pointer-events-auto fixed right-4 top-4 z-30 flex max-w-[calc(100vw-2rem)] items-start gap-3">
         <div className="hidden rounded-[24px] border border-white/70 bg-white/72 p-2 shadow-[0_18px_54px_rgba(124,58,237,0.12)] backdrop-blur-xl sm:flex">
           <ToolButton label="Export canvas" onClick={onExport}>
             <Download className="h-6 w-6" />

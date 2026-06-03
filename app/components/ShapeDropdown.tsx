@@ -18,6 +18,7 @@ import { ToolButton } from "./ToolButton";
 
 type ShapeDropdownProps = {
   activeTool: WhiteboardTool;
+  buttonSize?: "compact" | "regular";
   onShapeSelect: (shape: ShapeKind) => void;
 };
 
@@ -51,6 +52,7 @@ type MenuPosition = {
 
 export function ShapeDropdown({
   activeTool,
+  buttonSize = "regular",
   onShapeSelect,
 }: ShapeDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -122,9 +124,10 @@ export function ShapeDropdown({
         active={Boolean(activeShape)}
         label={`Shapes: ${selectedOption.label}`}
         onClick={toggleMenu}
+        size={buttonSize}
       >
         <span className="relative inline-flex">
-          <SelectedIcon className="h-6 w-6" />
+          <SelectedIcon className="h-5 w-5" />
           <ChevronRight className="absolute -right-2 -top-1 h-3.5 w-3.5 rotate-90 text-fuchsia-500" />
         </span>
       </ToolButton>
@@ -194,8 +197,13 @@ function calculateMenuPosition(anchor: HTMLDivElement | null): MenuPosition {
   }
 
   const rect = anchor.getBoundingClientRect();
-  let left = rect.left + rect.width / 2 - width / 2;
-  let top = rect.top - MENU_HEIGHT - MENU_MARGIN;
+  const opensFromLeftRail = rect.left < window.innerWidth * 0.35;
+  let left = opensFromLeftRail
+    ? rect.right + MENU_MARGIN
+    : rect.left + rect.width / 2 - width / 2;
+  let top = opensFromLeftRail
+    ? rect.top + rect.height / 2 - MENU_HEIGHT / 2
+    : rect.top - MENU_HEIGHT - MENU_MARGIN;
 
   left = clamp(left, MENU_MARGIN, window.innerWidth - width - MENU_MARGIN);
   top = clamp(top, MENU_MARGIN, window.innerHeight - MENU_HEIGHT - MENU_MARGIN);

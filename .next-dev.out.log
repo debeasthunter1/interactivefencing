@@ -16,3 +16,6 @@ Creating turbopack project {
  GET /api/optimize-drawing 405 in 78ms (next.js: 64ms, application-code: 14ms)
  POST /api/optimize-drawing 400 in 17ms (next.js: 5ms, application-code: 13ms)
  GET /api/optimize-drawing 405 in 41ms (next.js: 33ms, application-code: 7ms)
+ GET / 200 in 152ms (next.js: 47ms, application-code: 105ms)
+Terminate batch job (Y/N)? 
+[?25h

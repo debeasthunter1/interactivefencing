@@ -8,7 +8,7 @@ import {
   useMemo,
   useRef,
 } from "react";
-import type { PointerEvent, WheelEvent } from "react";
+import type { CSSProperties, PointerEvent, WheelEvent } from "react";
 import type {
   DrawingTool,
   ExportFormat,
@@ -25,6 +25,10 @@ import { CreativeShape } from "./CreativeShape";
 export const BOARD_WIDTH = 3200;
 export const BOARD_HEIGHT = 2200;
 
+const DRAWING_CHUNK_SIZE = 1024;
+const EXPORT_PADDING = 160;
+const MAX_EXPORT_SIDE = 4096;
+const MAX_FILL_PIXELS = 12_000_000;
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 2.2;
 const FLOOD_FILL_BOUNDARY_ALPHA = 8;
@@ -69,6 +73,32 @@ type StrokeSegment = {
   from: Point;
   to: Point;
   tool: DrawingTool;
+};
+
+type DrawingChunk = {
+  canvas: HTMLCanvasElement;
+  key: string;
+  x: number;
+  y: number;
+};
+
+type DrawingChunkMap = Map<string, DrawingChunk>;
+
+type DrawingStoreSnapshot = {
+  chunks: Array<{
+    dataUrl: string;
+    key: string;
+    x: number;
+    y: number;
+  }>;
+  version: 2;
+};
+
+type WorldBounds = {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
 };
 
 export type WhiteboardCanvasHandle = {
@@ -130,6 +160,7 @@ export const WhiteboardCanvas = forwardRef<
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingModeRef = useRef<DrawingMode>("idle");
+  const drawingChunksRef = useRef<DrawingChunkMap>(new Map());
   const elementsRef = useRef(elements);
   const lastPointRef = useRef<Point | null>(null);
   const onCanvasReadyRef = useRef(onCanvasReady);
@@ -140,6 +171,7 @@ export const WhiteboardCanvas = forwardRef<
   const stageRef = useRef<HTMLDivElement | null>(null);
   const startPointRef = useRef<Point | null>(null);
   const toolRef = useRef(tool);
+  const viewportRef = useRef(viewport);
 
   useEffect(() => {
     elementsRef.current = elements;
@@ -153,14 +185,17 @@ export const WhiteboardCanvas = forwardRef<
     toolRef.current = tool;
   }, [tool]);
 
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
+
   const boardStyle = useMemo(
-    () => createBoardStyle(gridMode),
-    [gridMode],
+    () => createInfiniteBoardStyle(gridMode, viewport),
+    [gridMode, viewport],
   );
 
   const resetContext = useCallback((context: CanvasRenderingContext2D) => {
-    const ratio = Number(canvasRef.current?.dataset.pixelRatio || 1);
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.setTransform(1, 0, 0, 1, 0, 0);
     context.imageSmoothingEnabled = true;
     context.lineCap = "round";
     context.lineJoin = "round";
@@ -168,66 +203,84 @@ export const WhiteboardCanvas = forwardRef<
     context.globalCompositeOperation = "source-over";
   }, []);
 
-  const getCanvasDataUrl = useCallback(() => {
-    const canvas = canvasRef.current;
-    return canvas ? canvas.toDataURL("image/png") : null;
-  }, []);
-
-  const restoreCanvas = useCallback(
-    (snapshot: string) => {
-      const canvas = canvasRef.current;
-      const context = canvas?.getContext("2d");
-      if (!canvas || !context) {
-        return;
-      }
-
-      const image = new Image();
-      image.onload = () => {
-        context.save();
-        context.setTransform(1, 0, 0, 1, 0, 0);
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        context.restore();
-        resetContext(context);
-      };
-      image.src = snapshot;
-    },
-    [resetContext],
-  );
-
-  const initializeCanvas = useCallback(() => {
+  const renderViewport = useCallback(() => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) {
       return;
     }
 
-    const currentSnapshot = canvas.width ? canvas.toDataURL("image/png") : null;
+    const ratio = Number(canvas.dataset.pixelRatio || 1);
+    const width = canvas.width / ratio;
+    const height = canvas.height / ratio;
+    const currentViewport = viewportRef.current;
+    const visibleBounds = {
+      height: height / currentViewport.zoom,
+      width: width / currentViewport.zoom,
+      x: -currentViewport.x / currentViewport.zoom,
+      y: -currentViewport.y / currentViewport.zoom,
+    };
+
+    context.save();
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.clearRect(0, 0, width, height);
+    context.translate(currentViewport.x, currentViewport.y);
+    context.scale(currentViewport.zoom, currentViewport.zoom);
+    for (const chunk of drawingChunksRef.current.values()) {
+      if (boundsIntersect(chunkToBounds(chunk), visibleBounds)) {
+        context.drawImage(chunk.canvas, chunk.x, chunk.y);
+      }
+    }
+    context.restore();
+  }, []);
+
+  const getCanvasDataUrl = useCallback(() => {
+    return serializeDrawingChunks(drawingChunksRef.current);
+  }, []);
+
+  const restoreCanvas = useCallback(
+    (snapshot: string) => {
+      restoreDrawingChunks(
+        snapshot,
+        drawingChunksRef.current,
+        resetContext,
+        renderViewport,
+      );
+    },
+    [renderViewport, resetContext],
+  );
+
+  const initializeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const stage = stageRef.current;
+    if (!canvas || !stage) {
+      return;
+    }
+
     const ratio = Math.min(window.devicePixelRatio || 1, 3);
+    const rect = stage.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width * ratio));
+    const height = Math.max(1, Math.round(rect.height * ratio));
 
     canvas.dataset.pixelRatio = String(ratio);
-    canvas.width = Math.round(BOARD_WIDTH * ratio);
-    canvas.height = Math.round(BOARD_HEIGHT * ratio);
-    canvas.style.width = `${BOARD_WIDTH}px`;
-    canvas.style.height = `${BOARD_HEIGHT}px`;
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
 
-    resetContext(context);
-
-    if (currentSnapshot) {
-      restoreCanvas(currentSnapshot);
-    } else {
-      context.save();
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      context.restore();
-      resetContext(context);
-      onCanvasReadyRef.current(canvas.toDataURL("image/png"));
-    }
-  }, [resetContext, restoreCanvas]);
+    renderViewport();
+    onCanvasReadyRef.current(serializeDrawingChunks(drawingChunksRef.current));
+  }, [renderViewport]);
 
   useEffect(() => {
     initializeCanvas();
+    window.addEventListener("resize", initializeCanvas);
+    return () => window.removeEventListener("resize", initializeCanvas);
   }, [initializeCanvas]);
+
+  useEffect(() => {
+    renderViewport();
+  }, [renderViewport, viewport]);
 
   useEffect(
     () => () => {
@@ -240,19 +293,6 @@ export const WhiteboardCanvas = forwardRef<
 
   const getCanvasPoint = useCallback(
     (clientX: number, clientY: number) => {
-      const canvas = canvasRef.current;
-      const rect = canvas?.getBoundingClientRect();
-      if (canvas && rect && rect.width > 0 && rect.height > 0) {
-        const ratio = Number(canvas.dataset.pixelRatio || 1);
-        const logicalWidth = canvas.width / ratio;
-        const logicalHeight = canvas.height / ratio;
-
-        return {
-          x: (clientX - rect.left) * (logicalWidth / rect.width),
-          y: (clientY - rect.top) * (logicalHeight / rect.height),
-        };
-      }
-
       const stageRect = stageRef.current?.getBoundingClientRect();
       if (!stageRect) {
         return { x: 0, y: 0 };
@@ -279,9 +319,7 @@ export const WhiteboardCanvas = forwardRef<
   }, []);
 
   const flushPendingStroke = useCallback(() => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !context) {
+    if (!drawingChunksRef.current) {
       pendingStrokeRef.current = [];
       rafRef.current = null;
       return;
@@ -291,7 +329,7 @@ export const WhiteboardCanvas = forwardRef<
     rafRef.current = null;
 
     for (const segment of segments) {
-      drawCreativeSegment(context, segment.from, segment.to, {
+      drawCreativeSegmentToChunks(drawingChunksRef.current, resetContext, segment, {
         color: strokeColor,
         opacity: strokeOpacity,
         textureIntensity,
@@ -299,7 +337,15 @@ export const WhiteboardCanvas = forwardRef<
         width: strokeWidth,
       });
     }
-  }, [strokeColor, strokeOpacity, strokeWidth, textureIntensity]);
+    renderViewport();
+  }, [
+    renderViewport,
+    resetContext,
+    strokeColor,
+    strokeOpacity,
+    strokeWidth,
+    textureIntensity,
+  ]);
 
   const enqueueStrokeSegment = useCallback(
     (segment: StrokeSegment) => {
@@ -371,12 +417,13 @@ export const WhiteboardCanvas = forwardRef<
       }
 
       const snapshot = floodFillCustomDrawing(
-        canvas,
+        drawingChunksRef.current,
         point,
         fillColor,
         resetContext,
       );
       if (snapshot) {
+        renderViewport();
         onCanvasCommit(snapshot);
       } else {
         onFillMiss("Couldn't find a closed shape to fill.");
@@ -422,19 +469,15 @@ export const WhiteboardCanvas = forwardRef<
     }
 
     if (isDrawingTool(tool)) {
-      const context = canvas.getContext("2d");
-      if (!context) {
-        return;
-      }
-
       drawingModeRef.current = "draw";
-      drawCreativePoint(context, point, {
+      drawCreativePointToChunks(drawingChunksRef.current, resetContext, point, {
         color: strokeColor,
         opacity: strokeOpacity,
         textureIntensity,
         tool,
         width: strokeWidth,
       });
+      renderViewport();
     }
   };
 
@@ -548,7 +591,7 @@ export const WhiteboardCanvas = forwardRef<
     startPointRef.current = null;
     lastPointRef.current = null;
     flushStrokeNow();
-    onCanvasCommit(canvas.toDataURL("image/png"));
+    onCanvasCommit(serializeDrawingChunks(drawingChunksRef.current));
   };
 
   const updateElement = (nextElement: WhiteboardElement, commit = false) => {
@@ -563,38 +606,33 @@ export const WhiteboardCanvas = forwardRef<
   };
 
   const clear = useCallback(() => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !context) {
-      return null;
-    }
-
-    context.save();
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.restore();
-    resetContext(context);
-    return canvas.toDataURL("image/png");
-  }, [resetContext]);
+    drawingChunksRef.current.clear();
+    renderViewport();
+    return serializeDrawingChunks(drawingChunksRef.current);
+  }, [renderViewport]);
 
   const exportImage = useCallback(
     (format: ExportFormat = "image/png") => {
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        return null;
-      }
-
+      const exportBounds = getExportBounds(drawingChunksRef.current, elements);
+      const scale = Math.min(
+        1,
+        MAX_EXPORT_SIDE / Math.max(exportBounds.width, exportBounds.height),
+      );
       const exportCanvas = document.createElement("canvas");
-      exportCanvas.width = BOARD_WIDTH;
-      exportCanvas.height = BOARD_HEIGHT;
+      exportCanvas.width = Math.max(1, Math.ceil(exportBounds.width * scale));
+      exportCanvas.height = Math.max(1, Math.ceil(exportBounds.height * scale));
       const context = exportCanvas.getContext("2d");
       if (!context) {
         return null;
       }
 
-      renderBoardBackground(context, gridMode);
-      context.drawImage(canvas, 0, 0, BOARD_WIDTH, BOARD_HEIGHT);
+      context.scale(scale, scale);
+      renderBoardBackground(context, gridMode, exportBounds);
+      context.save();
+      context.translate(-exportBounds.x, -exportBounds.y);
+      renderChunksToCanvas(context, drawingChunksRef.current, exportBounds);
       renderElementsToCanvas(context, elements);
+      context.restore();
 
       return exportCanvas.toDataURL(
         format,
@@ -607,36 +645,43 @@ export const WhiteboardCanvas = forwardRef<
   const replaceWithImage = useCallback(
     (imageUrl: string) =>
       new Promise<string | null>((resolve) => {
-        const canvas = canvasRef.current;
-        const context = canvas?.getContext("2d");
-        if (!canvas || !context) {
-          resolve(null);
-          return;
-        }
-
         const image = new Image();
         image.onload = () => {
-          context.save();
-          context.setTransform(1, 0, 0, 1, 0, 0);
-          context.clearRect(0, 0, canvas.width, canvas.height);
-          context.restore();
-          resetContext(context);
+          drawingChunksRef.current.clear();
 
-          const maxWidth = BOARD_WIDTH * 0.76;
-          const maxHeight = BOARD_HEIGHT * 0.76;
+          const stageRect = stageRef.current?.getBoundingClientRect();
+          const currentViewport = viewportRef.current;
+          const visibleWidth =
+            (stageRect?.width ?? BOARD_WIDTH) / currentViewport.zoom;
+          const visibleHeight =
+            (stageRect?.height ?? BOARD_HEIGHT) / currentViewport.zoom;
+          const centerX =
+            ((stageRect?.width ?? BOARD_WIDTH) / 2 - currentViewport.x) /
+            currentViewport.zoom;
+          const centerY =
+            ((stageRect?.height ?? BOARD_HEIGHT) / 2 - currentViewport.y) /
+            currentViewport.zoom;
+          const maxWidth = Math.min(BOARD_WIDTH * 0.76, visibleWidth * 0.76);
+          const maxHeight = Math.min(BOARD_HEIGHT * 0.76, visibleHeight * 0.76);
           const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
           const width = image.width * scale;
           const height = image.height * scale;
-          const x = (BOARD_WIDTH - width) / 2;
-          const y = (BOARD_HEIGHT - height) / 2;
+          const x = centerX - width / 2;
+          const y = centerY - height / 2;
 
-          context.drawImage(image, x, y, width, height);
-          resolve(canvas.toDataURL("image/png"));
+          drawImageToChunks(
+            drawingChunksRef.current,
+            resetContext,
+            image,
+            { height, width, x, y },
+          );
+          renderViewport();
+          resolve(serializeDrawingChunks(drawingChunksRef.current));
         };
         image.onerror = () => resolve(null);
         image.src = imageUrl;
       }),
-    [resetContext],
+    [renderViewport, resetContext],
   );
 
   useImperativeHandle(
@@ -654,48 +699,51 @@ export const WhiteboardCanvas = forwardRef<
   return (
     <div
       ref={stageRef}
-      className="relative h-screen w-screen overflow-hidden bg-[radial-gradient(circle_at_20%_12%,#fff7ad_0,transparent_24%),radial-gradient(circle_at_78%_18%,#ffd6e8_0,transparent_26%),linear-gradient(135deg,#e0f2fe_0%,#fff7ed_42%,#f5d0fe_100%)] text-slate-950"
+      className="relative h-screen w-screen overflow-hidden bg-[#fffdf7] text-slate-950"
       onWheel={handleWheel}
     >
-      <div className="pointer-events-none absolute inset-0 opacity-60 [background-image:radial-gradient(rgba(255,255,255,0.9)_1px,transparent_1px)] [background-size:34px_34px]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_12%,rgba(255,247,173,0.4)_0,transparent_24%),radial-gradient(circle_at_78%_18%,rgba(255,214,232,0.38)_0,transparent_26%),linear-gradient(135deg,rgba(224,242,254,0.42)_0%,rgba(255,247,237,0.24)_42%,rgba(245,208,254,0.28)_100%)]" />
       <div
-        className="absolute left-0 top-0 overflow-hidden rounded-[28px] shadow-[0_34px_100px_rgba(88,28,135,0.2)] transition-[box-shadow,filter] duration-300"
+        className="pointer-events-none absolute inset-0"
+        style={boardStyle}
+      />
+      <div className="pointer-events-none absolute inset-0 opacity-55 [background-image:radial-gradient(rgba(255,255,255,0.9)_1px,transparent_1px)] [background-size:34px_34px]" />
+
+      <canvas
+        ref={canvasRef}
+        aria-label="Interactive creativity canvas"
+        className={[
+          "absolute inset-0 h-full w-full touch-none",
+          tool === "pan" ? "cursor-grab" : "",
+          tool === "select" ? "cursor-default" : "",
+          tool !== "pan" && tool !== "select" ? "cursor-crosshair" : "",
+        ].join(" ")}
+        onPointerCancel={finishPointerAction}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishPointerAction}
+      />
+
+      <div
+        className="pointer-events-none absolute left-0 top-0 overflow-visible"
         style={{
-          ...boardStyle,
-          height: BOARD_HEIGHT,
+          height: 0,
           transform: `translate3d(${viewport.x}px, ${viewport.y}px, 0) scale(${viewport.zoom})`,
           transformOrigin: "0 0",
-          width: BOARD_WIDTH,
+          width: 0,
         }}
       >
-        <canvas
-          ref={canvasRef}
-          aria-label="Interactive creativity canvas"
-          className={[
-            "absolute inset-0 h-full w-full touch-none",
-            tool === "pan" ? "cursor-grab" : "",
-            tool === "select" ? "cursor-default" : "",
-            tool !== "pan" && tool !== "select" ? "cursor-crosshair" : "",
-          ].join(" ")}
-          onPointerCancel={finishPointerAction}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={finishPointerAction}
-        />
-
-        <div className="absolute inset-0 pointer-events-none">
-          {elements.map((element) => (
-            <CreativeShape
-              key={element.id}
-              element={element}
-              isSelected={selectedElementId === element.id}
-              tool={tool}
-              zoom={viewport.zoom}
-              onChange={updateElement}
-              onSelect={onSelectElement}
-            />
-          ))}
-        </div>
+        {elements.map((element) => (
+          <CreativeShape
+            key={element.id}
+            element={element}
+            isSelected={selectedElementId === element.id}
+            tool={tool}
+            zoom={viewport.zoom}
+            onChange={updateElement}
+            onSelect={onSelectElement}
+          />
+        ))}
       </div>
     </div>
   );
@@ -804,30 +852,413 @@ function toShapeLocalPoint(point: Point, element: ShapeElementData): Point {
   };
 }
 
+function createChunk(
+  chunks: DrawingChunkMap,
+  indexX: number,
+  indexY: number,
+  resetContext: (context: CanvasRenderingContext2D) => void,
+) {
+  const key = `${indexX}:${indexY}`;
+  const existing = chunks.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = DRAWING_CHUNK_SIZE;
+  canvas.height = DRAWING_CHUNK_SIZE;
+  const context = canvas.getContext("2d");
+  if (context) {
+    resetContext(context);
+  }
+
+  const chunk = {
+    canvas,
+    key,
+    x: indexX * DRAWING_CHUNK_SIZE,
+    y: indexY * DRAWING_CHUNK_SIZE,
+  };
+  chunks.set(key, chunk);
+  return chunk;
+}
+
+function getChunksForBounds(
+  chunks: DrawingChunkMap,
+  bounds: WorldBounds,
+  resetContext: (context: CanvasRenderingContext2D) => void,
+) {
+  const startX = Math.floor(bounds.x / DRAWING_CHUNK_SIZE);
+  const startY = Math.floor(bounds.y / DRAWING_CHUNK_SIZE);
+  const endX = Math.floor(
+    (bounds.x + Math.max(bounds.width, 1) - 0.001) / DRAWING_CHUNK_SIZE,
+  );
+  const endY = Math.floor(
+    (bounds.y + Math.max(bounds.height, 1) - 0.001) / DRAWING_CHUNK_SIZE,
+  );
+  const drawingChunks: DrawingChunk[] = [];
+
+  for (let indexY = startY; indexY <= endY; indexY += 1) {
+    for (let indexX = startX; indexX <= endX; indexX += 1) {
+      drawingChunks.push(createChunk(chunks, indexX, indexY, resetContext));
+    }
+  }
+
+  return drawingChunks;
+}
+
+function drawCreativePointToChunks(
+  chunks: DrawingChunkMap,
+  resetContext: (context: CanvasRenderingContext2D) => void,
+  point: Point,
+  options: CreativeDrawOptions,
+) {
+  drawCreativeSegmentToChunks(
+    chunks,
+    resetContext,
+    {
+      from: { x: point.x - 0.01, y: point.y - 0.01 },
+      to: { x: point.x + 0.01, y: point.y + 0.01 },
+      tool: options.tool,
+    },
+    options,
+  );
+}
+
+function drawCreativeSegmentToChunks(
+  chunks: DrawingChunkMap,
+  resetContext: (context: CanvasRenderingContext2D) => void,
+  segment: StrokeSegment,
+  options: CreativeDrawOptions,
+) {
+  const pad = Math.max(80, options.width * 3.2 + options.textureIntensity * 18);
+  const bounds = {
+    height: Math.abs(segment.to.y - segment.from.y) + pad * 2,
+    width: Math.abs(segment.to.x - segment.from.x) + pad * 2,
+    x: Math.min(segment.from.x, segment.to.x) - pad,
+    y: Math.min(segment.from.y, segment.to.y) - pad,
+  };
+
+  for (const chunk of getChunksForBounds(chunks, bounds, resetContext)) {
+    const context = chunk.canvas.getContext("2d");
+    if (!context) {
+      continue;
+    }
+
+    context.save();
+    context.translate(-chunk.x, -chunk.y);
+    drawCreativeSegment(context, segment.from, segment.to, options);
+    context.restore();
+    resetContext(context);
+  }
+}
+
+function drawImageToChunks(
+  chunks: DrawingChunkMap,
+  resetContext: (context: CanvasRenderingContext2D) => void,
+  image: CanvasImageSource,
+  bounds: WorldBounds,
+  compositeOperation: GlobalCompositeOperation = "source-over",
+) {
+  for (const chunk of getChunksForBounds(chunks, bounds, resetContext)) {
+    const context = chunk.canvas.getContext("2d");
+    if (!context) {
+      continue;
+    }
+
+    context.save();
+    context.globalCompositeOperation = compositeOperation;
+    context.drawImage(
+      image,
+      bounds.x - chunk.x,
+      bounds.y - chunk.y,
+      bounds.width,
+      bounds.height,
+    );
+    context.restore();
+    resetContext(context);
+  }
+}
+
+function renderChunksToCanvas(
+  context: CanvasRenderingContext2D,
+  chunks: DrawingChunkMap,
+  bounds: WorldBounds,
+) {
+  for (const chunk of chunks.values()) {
+    if (boundsIntersect(chunkToBounds(chunk), bounds)) {
+      context.drawImage(chunk.canvas, chunk.x, chunk.y);
+    }
+  }
+}
+
+function serializeDrawingChunks(chunks: DrawingChunkMap) {
+  const snapshot: DrawingStoreSnapshot = {
+    chunks: [],
+    version: 2,
+  };
+
+  for (const chunk of chunks.values()) {
+    if (isCanvasTransparent(chunk.canvas)) {
+      continue;
+    }
+
+    snapshot.chunks.push({
+      dataUrl: chunk.canvas.toDataURL("image/png"),
+      key: chunk.key,
+      x: chunk.x,
+      y: chunk.y,
+    });
+  }
+
+  return JSON.stringify(snapshot);
+}
+
+function restoreDrawingChunks(
+  snapshot: string,
+  chunks: DrawingChunkMap,
+  resetContext: (context: CanvasRenderingContext2D) => void,
+  onRestore: () => void,
+) {
+  chunks.clear();
+  const parsedSnapshot = parseDrawingStoreSnapshot(snapshot);
+  if (parsedSnapshot) {
+    if (!parsedSnapshot.chunks.length) {
+      onRestore();
+      return;
+    }
+
+    Promise.all(
+      parsedSnapshot.chunks.map(
+        (chunkSnapshot) =>
+          new Promise<void>((resolve) => {
+            const image = new Image();
+            image.onload = () => {
+              const indexX = Math.floor(chunkSnapshot.x / DRAWING_CHUNK_SIZE);
+              const indexY = Math.floor(chunkSnapshot.y / DRAWING_CHUNK_SIZE);
+              const chunk = createChunk(chunks, indexX, indexY, resetContext);
+              const context = chunk.canvas.getContext("2d");
+              if (context) {
+                context.clearRect(0, 0, DRAWING_CHUNK_SIZE, DRAWING_CHUNK_SIZE);
+                context.drawImage(image, 0, 0);
+                resetContext(context);
+              }
+              resolve();
+            };
+            image.onerror = () => resolve();
+            image.src = chunkSnapshot.dataUrl;
+          }),
+      ),
+    ).then(onRestore);
+    return;
+  }
+
+  if (!snapshot.startsWith("data:image/")) {
+    onRestore();
+    return;
+  }
+
+  const image = new Image();
+  image.onload = () => {
+    drawImageToChunks(
+      chunks,
+      resetContext,
+      image,
+      { height: BOARD_HEIGHT, width: BOARD_WIDTH, x: 0, y: 0 },
+    );
+    onRestore();
+  };
+  image.onerror = onRestore;
+  image.src = snapshot;
+}
+
+function parseDrawingStoreSnapshot(snapshot: string): DrawingStoreSnapshot | null {
+  try {
+    const parsed = JSON.parse(snapshot) as Partial<DrawingStoreSnapshot>;
+    if (
+      parsed.version === 2 &&
+      Array.isArray(parsed.chunks) &&
+      parsed.chunks.every(
+        (chunk) =>
+          typeof chunk.dataUrl === "string" &&
+          typeof chunk.key === "string" &&
+          typeof chunk.x === "number" &&
+          typeof chunk.y === "number",
+      )
+    ) {
+      return parsed as DrawingStoreSnapshot;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function getChunkContentBounds(chunks: DrawingChunkMap): WorldBounds | null {
+  let bounds: WorldBounds | null = null;
+
+  for (const chunk of chunks.values()) {
+    if (isCanvasTransparent(chunk.canvas)) {
+      continue;
+    }
+
+    bounds = mergeBounds(bounds, chunkToBounds(chunk));
+  }
+
+  return bounds;
+}
+
+function getExportBounds(
+  chunks: DrawingChunkMap,
+  elements: WhiteboardElement[],
+): WorldBounds {
+  let bounds = getChunkContentBounds(chunks);
+
+  for (const element of elements) {
+    bounds = mergeBounds(bounds, getShapeWorldBounds(element));
+  }
+
+  return expandBounds(
+    bounds ?? { height: BOARD_HEIGHT, width: BOARD_WIDTH, x: 0, y: 0 },
+    bounds ? EXPORT_PADDING : 0,
+  );
+}
+
+function getShapeWorldBounds(element: ShapeElementData): WorldBounds {
+  const centerX = element.x + element.width / 2;
+  const centerY = element.y + element.height / 2;
+  const angle = (element.rotation * Math.PI) / 180;
+  const corners = [
+    { x: element.x, y: element.y },
+    { x: element.x + element.width, y: element.y },
+    { x: element.x + element.width, y: element.y + element.height },
+    { x: element.x, y: element.y + element.height },
+  ].map((point) => {
+    const dx = point.x - centerX;
+    const dy = point.y - centerY;
+    return {
+      x: centerX + dx * Math.cos(angle) - dy * Math.sin(angle),
+      y: centerY + dx * Math.sin(angle) + dy * Math.cos(angle),
+    };
+  });
+  const minX = Math.min(...corners.map((point) => point.x));
+  const maxX = Math.max(...corners.map((point) => point.x));
+  const minY = Math.min(...corners.map((point) => point.y));
+  const maxY = Math.max(...corners.map((point) => point.y));
+
+  return expandBounds(
+    { height: maxY - minY, width: maxX - minX, x: minX, y: minY },
+    Math.max(24, element.borderWidth * 2),
+  );
+}
+
+function mergeBounds(
+  first: WorldBounds | null,
+  second: WorldBounds,
+): WorldBounds {
+  if (!first) {
+    return second;
+  }
+
+  const minX = Math.min(first.x, second.x);
+  const minY = Math.min(first.y, second.y);
+  const maxX = Math.max(first.x + first.width, second.x + second.width);
+  const maxY = Math.max(first.y + first.height, second.y + second.height);
+
+  return {
+    height: maxY - minY,
+    width: maxX - minX,
+    x: minX,
+    y: minY,
+  };
+}
+
+function expandBounds(bounds: WorldBounds, padding: number): WorldBounds {
+  return {
+    height: Math.ceil(bounds.height + padding * 2),
+    width: Math.ceil(bounds.width + padding * 2),
+    x: Math.floor(bounds.x - padding),
+    y: Math.floor(bounds.y - padding),
+  };
+}
+
+function chunkToBounds(chunk: DrawingChunk): WorldBounds {
+  return {
+    height: DRAWING_CHUNK_SIZE,
+    width: DRAWING_CHUNK_SIZE,
+    x: chunk.x,
+    y: chunk.y,
+  };
+}
+
+function boundsIntersect(first: WorldBounds, second: WorldBounds) {
+  return (
+    first.x < second.x + second.width &&
+    first.x + first.width > second.x &&
+    first.y < second.y + second.height &&
+    first.y + first.height > second.y
+  );
+}
+
+function isCanvasTransparent(canvas: HTMLCanvasElement) {
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    return true;
+  }
+
+  const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  for (let index = 3; index < data.length; index += 4) {
+    if (data[index] > 0) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function floodFillCustomDrawing(
-  canvas: HTMLCanvasElement,
+  chunks: DrawingChunkMap,
   start: Point,
   fillColor: string,
   resetContext: (context: CanvasRenderingContext2D) => void,
 ) {
-  const sourceCanvas = document.createElement("canvas");
-  sourceCanvas.width = BOARD_WIDTH;
-  sourceCanvas.height = BOARD_HEIGHT;
-  const sourceContext = sourceCanvas.getContext("2d", {
-    willReadFrequently: true,
-  });
-  const canvasContext = canvas.getContext("2d");
-
-  if (!sourceContext || !canvasContext) {
+  const contentBounds = getChunkContentBounds(chunks);
+  if (!contentBounds) {
     return null;
   }
 
-  sourceContext.drawImage(canvas, 0, 0, BOARD_WIDTH, BOARD_HEIGHT);
+  const bounds = expandBounds(contentBounds, 180);
+  const width = Math.ceil(bounds.width);
+  const height = Math.ceil(bounds.height);
+  const startX = Math.floor(start.x - bounds.x);
+  const startY = Math.floor(start.y - bounds.y);
+  if (
+    width < 1 ||
+    height < 1 ||
+    width * height > MAX_FILL_PIXELS ||
+    startX < 0 ||
+    startY < 0 ||
+    startX >= width ||
+    startY >= height
+  ) {
+    return null;
+  }
 
-  const width = sourceCanvas.width;
-  const height = sourceCanvas.height;
-  const startX = clamp(Math.floor(start.x), 0, width - 1);
-  const startY = clamp(Math.floor(start.y), 0, height - 1);
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = width;
+  sourceCanvas.height = height;
+  const sourceContext = sourceCanvas.getContext("2d", {
+    willReadFrequently: true,
+  });
+
+  if (!sourceContext) {
+    return null;
+  }
+
+  sourceContext.translate(-bounds.x, -bounds.y);
+  renderChunksToCanvas(sourceContext, chunks, bounds);
+  sourceContext.setTransform(1, 0, 0, 1, 0, 0);
+
   const sourceImage = sourceContext.getImageData(0, 0, width, height);
   const source = sourceImage.data;
   const startIndex = startY * width + startX;
@@ -925,24 +1356,9 @@ function floodFillCustomDrawing(
 
   fillContext.putImageData(fillImage, 0, 0);
 
-  const originalCanvas = document.createElement("canvas");
-  originalCanvas.width = canvas.width;
-  originalCanvas.height = canvas.height;
-  const originalContext = originalCanvas.getContext("2d");
-  if (!originalContext) {
-    return null;
-  }
-  originalContext.drawImage(canvas, 0, 0);
+  drawImageToChunks(chunks, resetContext, fillCanvas, bounds, "destination-over");
 
-  canvasContext.save();
-  canvasContext.setTransform(1, 0, 0, 1, 0, 0);
-  canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-  canvasContext.restore();
-  resetContext(canvasContext);
-  canvasContext.drawImage(fillCanvas, 0, 0, BOARD_WIDTH, BOARD_HEIGHT);
-  canvasContext.drawImage(originalCanvas, 0, 0, BOARD_WIDTH, BOARD_HEIGHT);
-
-  return canvas.toDataURL("image/png");
+  return serializeDrawingChunks(chunks);
 }
 
 function pushFloodPixel(
@@ -1013,19 +1429,6 @@ type CreativeDrawOptions = {
   tool: DrawingTool;
   width: number;
 };
-
-function drawCreativePoint(
-  context: CanvasRenderingContext2D,
-  point: Point,
-  options: CreativeDrawOptions,
-) {
-  drawCreativeSegment(
-    context,
-    { x: point.x - 0.01, y: point.y - 0.01 },
-    { x: point.x + 0.01, y: point.y + 0.01 },
-    options,
-  );
-}
 
 function drawCreativeSegment(
   context: CanvasRenderingContext2D,
@@ -1128,57 +1531,86 @@ const PAPER_BACKGROUND = {
     "radial-gradient(rgba(15,23,42,0.045) 0.7px, transparent 0.7px), linear-gradient(135deg, rgba(255,255,255,0.8), rgba(248,250,252,0.35))",
 };
 
-function createBoardStyle(gridMode: GridMode) {
-  const grid =
-    gridMode === "grid"
-      ? "linear-gradient(rgba(15,23,42,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.08) 1px, transparent 1px), "
-      : gridMode === "dots"
-        ? "radial-gradient(rgba(15,23,42,0.18) 1.2px, transparent 1.2px), "
-        : "";
-  const gridSize =
-    gridMode === "grid" ? "42px 42px, 42px 42px, auto" : gridMode === "dots" ? "28px 28px, auto" : "auto";
+function createInfiniteBoardStyle(
+  gridMode: GridMode,
+  viewport: ViewportState,
+): CSSProperties {
+  const zoom = clamp(viewport.zoom, MIN_ZOOM, MAX_ZOOM);
+  const textureSize = `${Math.max(8, 20 * zoom)}px ${Math.max(8, 20 * zoom)}px`;
+  const worldPosition = `${viewport.x}px ${viewport.y}px`;
+
+  if (gridMode === "grid") {
+    return {
+      backgroundColor: PAPER_BACKGROUND.color,
+      backgroundImage:
+        "linear-gradient(rgba(15,23,42,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.08) 1px, transparent 1px), radial-gradient(rgba(15,23,42,0.045) 0.7px, transparent 0.7px), linear-gradient(135deg, rgba(255,255,255,0.82), rgba(248,250,252,0.36))",
+      backgroundPosition: `${worldPosition}, ${worldPosition}, ${worldPosition}, 0 0`,
+      backgroundSize: `${42 * zoom}px ${42 * zoom}px, ${42 * zoom}px ${42 * zoom}px, ${textureSize}, auto`,
+    };
+  }
+
+  if (gridMode === "dots") {
+    return {
+      backgroundColor: PAPER_BACKGROUND.color,
+      backgroundImage:
+        "radial-gradient(rgba(15,23,42,0.18) 1.2px, transparent 1.2px), radial-gradient(rgba(15,23,42,0.045) 0.7px, transparent 0.7px), linear-gradient(135deg, rgba(255,255,255,0.82), rgba(248,250,252,0.36))",
+      backgroundPosition: `${worldPosition}, ${worldPosition}, 0 0`,
+      backgroundSize: `${28 * zoom}px ${28 * zoom}px, ${textureSize}, auto`,
+    };
+  }
 
   return {
     backgroundColor: PAPER_BACKGROUND.color,
-    backgroundImage: `${grid}${PAPER_BACKGROUND.image}`,
-    backgroundSize: gridSize,
+    backgroundImage: PAPER_BACKGROUND.image,
+    backgroundPosition: `${worldPosition}, 0 0`,
+    backgroundSize: `${textureSize}, auto`,
   };
 }
 
-function renderBoardBackground(context: CanvasRenderingContext2D, gridMode: GridMode) {
+function renderBoardBackground(
+  context: CanvasRenderingContext2D,
+  gridMode: GridMode,
+  bounds: WorldBounds,
+) {
   context.fillStyle = PAPER_BACKGROUND.color;
-  context.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
+  context.fillRect(0, 0, bounds.width, bounds.height);
 
   context.fillStyle = "rgba(15, 23, 42, 0.035)";
-  for (let y = 10; y < BOARD_HEIGHT; y += 20) {
-    for (let x = 10; x < BOARD_WIDTH; x += 20) {
-      context.fillRect(x, y, 1, 1);
+  const speckleStartX = Math.floor((bounds.x - 10) / 20) * 20 + 10;
+  const speckleStartY = Math.floor((bounds.y - 10) / 20) * 20 + 10;
+  for (let y = speckleStartY; y < bounds.y + bounds.height; y += 20) {
+    for (let x = speckleStartX; x < bounds.x + bounds.width; x += 20) {
+      context.fillRect(x - bounds.x, y - bounds.y, 1, 1);
     }
   }
 
   if (gridMode === "grid") {
     context.strokeStyle = "rgba(15,23,42,0.08)";
     context.lineWidth = 1;
-    for (let x = 0; x < BOARD_WIDTH; x += 42) {
+    const gridStartX = Math.floor(bounds.x / 42) * 42;
+    const gridStartY = Math.floor(bounds.y / 42) * 42;
+    for (let x = gridStartX; x < bounds.x + bounds.width; x += 42) {
       context.beginPath();
-      context.moveTo(x, 0);
-      context.lineTo(x, BOARD_HEIGHT);
+      context.moveTo(x - bounds.x, 0);
+      context.lineTo(x - bounds.x, bounds.height);
       context.stroke();
     }
-    for (let y = 0; y < BOARD_HEIGHT; y += 42) {
+    for (let y = gridStartY; y < bounds.y + bounds.height; y += 42) {
       context.beginPath();
-      context.moveTo(0, y);
-      context.lineTo(BOARD_WIDTH, y);
+      context.moveTo(0, y - bounds.y);
+      context.lineTo(bounds.width, y - bounds.y);
       context.stroke();
     }
   }
 
   if (gridMode === "dots") {
     context.fillStyle = "rgba(15,23,42,0.16)";
-    for (let y = 14; y < BOARD_HEIGHT; y += 28) {
-      for (let x = 14; x < BOARD_WIDTH; x += 28) {
+    const dotStartX = Math.floor((bounds.x - 14) / 28) * 28 + 14;
+    const dotStartY = Math.floor((bounds.y - 14) / 28) * 28 + 14;
+    for (let y = dotStartY; y < bounds.y + bounds.height; y += 28) {
+      for (let x = dotStartX; x < bounds.x + bounds.width; x += 28) {
         context.beginPath();
-        context.arc(x, y, 1.2, 0, Math.PI * 2);
+        context.arc(x - bounds.x, y - bounds.y, 1.2, 0, Math.PI * 2);
         context.fill();
       }
     }
